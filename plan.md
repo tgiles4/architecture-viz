@@ -53,6 +53,8 @@ Notes:
 
 ## Feature 3: Drill-down to view code overlayed on diagram
 
+Status: Done
+
 - Objectives:
   - Click node to open overlay with source code snippet and metadata.
   - Syntax highlighting and open-in-editor link (VS Code protocol where available).
@@ -64,6 +66,14 @@ Notes:
   5. Implement server-side symbol lookup from AST indices.
 - Deliverables:
   - Overlay UI with code and facts, connected to diagram nodes.
+
+Notes:
+- Implemented `/source` API endpoint with file caching for fast code retrieval.
+- Added overlay UI with three tabs: Summary (module details), Code (source with line numbers), References (dependencies).
+- Wired D3 node click to fetch and display overlay with syntax highlighting.
+- Added deep emerald green background theme (#064e3b) for beautiful visual appeal.
+- Fixed code snippets rendering by including files array in /facts API response.
+- Features: click any node to view source code, tabbed interface, line numbers, dependency relationships.
 
 ## Feature 4: Control flow between methods, starting from a specific method
 
