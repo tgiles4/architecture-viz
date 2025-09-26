@@ -60,7 +60,7 @@
         }
         
         .diagram-container {
-            background: white;
+            background: #374151;
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             overflow: hidden;
@@ -69,15 +69,52 @@
         #diagram {
             width: 100%;
             height: 600px;
-            background: #f0fdf4;
+            background: #1f2937;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .diagram-svg {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .zoom-controls {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        
+        .zoom-btn {
+            width: 40px;
+            height: 40px;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .zoom-btn:hover {
+            background: rgba(0, 0, 0, 0.9);
         }
         
         .controls {
             padding: 15px;
-            border-bottom: 1px solid #e5e7eb;
+            border-bottom: 1px solid #4b5563;
             display: flex;
             gap: 10px;
             align-items: center;
+            background: #374151;
+            color: white;
         }
         
         .search-box {
@@ -316,6 +353,12 @@
             
             <div id="diagram">
                 <div class="loading">Select a repository path and click "Analyze" to visualize the architecture</div>
+                <div class="zoom-controls">
+                    <button class="zoom-btn" onclick="zoomIn()" title="Zoom In">+</button>
+                    <button class="zoom-btn" onclick="zoomOut()" title="Zoom Out">−</button>
+                    <button class="zoom-btn" onclick="fitToView()" title="Fit to View">⌂</button>
+                    <button class="zoom-btn" onclick="resetView()" title="Reset View">⌘</button>
+                </div>
             </div>
         </div>
     </div>
@@ -365,8 +408,16 @@
             </div>
             <div class="overlay-body">
                 <div class="form-group">
-                    <label for="symbolInput">Enter function/method name:</label>
-                    <input type="text" id="symbolInput" placeholder="e.g., analyze, parse_python_module" style="width: 100%; margin-bottom: 10px;">
+                    <label for="fileSelect">Select File:</label>
+                    <select id="fileSelect" onchange="updateFunctionList()" style="width: 100%; margin-bottom: 10px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+                        <option value="">Choose a file...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="functionSelect">Select Function/Class:</label>
+                    <select id="functionSelect" style="width: 100%; margin-bottom: 10px; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px;">
+                        <option value="">Choose a function...</option>
+                    </select>
                 </div>
                 <div class="form-group">
                     <label for="depthInput">Max depth:</label>
@@ -394,6 +445,9 @@
         let currentAnalysis = null;
         let analysisFiles = null;
         let currentMode = 'architecture'; // 'architecture' or 'callgraph'
+        let zoomLevel = 1;
+        let panX = 0;
+        let panY = 0;
 
         async function analyzeRepository() {
             const path = document.getElementById('pathInput').value.trim();
@@ -467,7 +521,23 @@
             svg = d3.select('#diagram')
                 .append('svg')
                 .attr('width', width)
-                .attr('height', height);
+                .attr('height', height)
+                .attr('class', 'diagram-svg');
+            
+            // Add zoom behavior
+            const zoom = d3.zoom()
+                .scaleExtent([0.1, 4])
+                .on('zoom', function(event) {
+                    g.attr('transform', event.transform);
+                    zoomLevel = event.transform.k;
+                    panX = event.transform.x;
+                    panY = event.transform.y;
+                });
+            
+            svg.call(zoom);
+            
+            // Create main group for all elements
+            const g = svg.append('g');
             
             // Create tooltip
             const tooltip = d3.select('body').append('div')
@@ -482,7 +552,7 @@
                 .force('collision', d3.forceCollide().radius(30));
             
             // Create links
-            links = svg.append('g')
+            links = g.append('g')
                 .selectAll('line')
                 .data(edges)
                 .enter().append('line')
@@ -490,7 +560,7 @@
                 .attr('stroke-width', 2);
             
             // Create nodes
-            const nodeGroups = svg.append('g')
+            const nodeGroups = g.append('g')
                 .selectAll('g')
                 .data(nodes)
                 .enter().append('g')
@@ -734,6 +804,43 @@
         
         function showCallgraphDialog() {
             document.getElementById('callgraphDialog').style.display = 'block';
+            populateFileDropdown();
+        }
+        
+        function populateFileDropdown() {
+            const fileSelect = document.getElementById('fileSelect');
+            fileSelect.innerHTML = '<option value="">Choose a file...</option>';
+            
+            if (analysisFiles) {
+                const pythonFiles = analysisFiles.filter(f => f.language === 'python' && f.module);
+                pythonFiles.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file.path;
+                    option.textContent = file.rel_path;
+                    fileSelect.appendChild(option);
+                });
+            }
+        }
+        
+        function updateFunctionList() {
+            const fileSelect = document.getElementById('fileSelect');
+            const functionSelect = document.getElementById('functionSelect');
+            const selectedFile = fileSelect.value;
+            
+            functionSelect.innerHTML = '<option value="">Choose a function...</option>';
+            
+            if (selectedFile && analysisFiles) {
+                const file = analysisFiles.find(f => f.path === selectedFile);
+                if (file && file.module) {
+                    // This is a simplified approach - in a real implementation,
+                    // you'd parse the file to extract function names
+                    const moduleName = file.module.split('.').pop();
+                    const option = document.createElement('option');
+                    option.value = moduleName;
+                    option.textContent = moduleName + ' (module)';
+                    functionSelect.appendChild(option);
+                }
+            }
         }
         
         function closeCallgraphDialog() {
@@ -741,13 +848,13 @@
         }
         
         async function generateCallgraph() {
-            const symbol = document.getElementById('symbolInput').value.trim();
+            const symbol = document.getElementById('functionSelect').value.trim();
             const depth = parseInt(document.getElementById('depthInput').value);
             const includeExternal = document.getElementById('includeExternal').checked;
             const resultsDiv = document.getElementById('callgraphResults');
             
             if (!symbol) {
-                resultsDiv.innerHTML = '<div class="error">Please enter a function name</div>';
+                resultsDiv.innerHTML = '<div class="error">Please select a function</div>';
                 return;
             }
             
@@ -874,6 +981,73 @@
                 nodeGroups
                     .attr('transform', d => `translate(${d.x},${d.y})`);
             });
+        }
+        
+        // Zoom and pan functions
+        function zoomIn() {
+            if (svg) {
+                svg.transition().call(
+                    d3.zoom().transform,
+                    d3.zoomTransform(svg.node()).scale(zoomLevel * 1.5)
+                );
+            }
+        }
+        
+        function zoomOut() {
+            if (svg) {
+                svg.transition().call(
+                    d3.zoom().transform,
+                    d3.zoomTransform(svg.node()).scale(zoomLevel * 0.75)
+                );
+            }
+        }
+        
+        function fitToView() {
+            if (svg && nodes && nodes.length > 0) {
+                const width = document.getElementById('diagram').clientWidth;
+                const height = 600;
+                
+                // Calculate bounds of all nodes
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                nodes.forEach(node => {
+                    if (node.x !== undefined) {
+                        minX = Math.min(minX, node.x);
+                        maxX = Math.max(maxX, node.x);
+                        minY = Math.min(minY, node.y);
+                        maxY = Math.max(maxY, node.y);
+                    }
+                });
+                
+                if (minX !== Infinity) {
+                    const padding = 50;
+                    const scale = Math.min(
+                        (width - padding * 2) / (maxX - minX),
+                        (height - padding * 2) / (maxY - minY)
+                    );
+                    
+                    const centerX = (minX + maxX) / 2;
+                    const centerY = (minY + maxY) / 2;
+                    
+                    svg.transition().call(
+                        d3.zoom().transform,
+                        d3.zoomIdentity
+                            .translate(width / 2 - centerX * scale, height / 2 - centerY * scale)
+                            .scale(scale)
+                    );
+                }
+            }
+        }
+        
+        function resetView() {
+            if (svg) {
+                svg.transition().call(
+                    d3.zoom().transform,
+                    d3.zoomIdentity
+                );
+                zoomLevel = 1;
+                panX = 0;
+                panY = 0;
+            }
         }
     </script>
 </body>
