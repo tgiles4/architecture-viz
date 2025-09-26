@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture Viz - Interactive Diagram</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f8fafc;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        
+        .form-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        button {
+            padding: 10px 20px;
+            background: #3b82f6;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        button:hover {
+            background: #2563eb;
+        }
+        
+        button:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        .diagram-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .controls {
+            padding: 15px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        
+        .search-box {
+            flex: 1;
+            max-width: 300px;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        
+        .stats {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            color: #6b7280;
+        }
+        
+        #diagram {
+            width: 100%;
+            height: 600px;
+            background: #fafbfc;
+        }
+        
+        .node {
+            cursor: pointer;
+        }
+        
+        .node circle {
+            stroke: #fff;
+            stroke-width: 2px;
+        }
+        
+        .node text {
+            font-size: 12px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        
+        .link {
+            stroke: #999;
+            stroke-opacity: 0.6;
+            stroke-width: 1px;
+        }
+        
+        .link.import {
+            stroke: #3b82f6;
+            stroke-dasharray: 3,3;
+        }
+        
+        .link.contains {
+            stroke: #10b981;
+        }
+        
+        .tooltip {
+            position: absolute;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            pointer-events: none;
+            z-index: 1000;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6b7280;
+        }
+        
+        .error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #dc2626;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏗️ Architecture Viz</h1>
+            <p>Interactive diagram showing packages, modules, and dependencies</p>
+            
+            <div class="form-group">
+                <input type="text" id="pathInput" placeholder="Enter repository path (e.g., /workspaces/architecture-viz)" 
+                       value="/workspaces/architecture-viz">
+                <button id="analyzeBtn" onclick="analyzeRepository()">Analyze</button>
+            </div>
+            
+            <div id="errorMessage" style="display: none;"></div>
+        </div>
+        
+        <div class="diagram-container">
+            <div class="controls">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Search nodes..." onkeyup="searchNodes()">
+                </div>
+                <div class="stats" id="stats">
+                    <span>Ready to analyze</span>
+                </div>
+            </div>
+            
+            <div id="diagram">
+                <div class="loading">Select a repository path and click "Analyze" to visualize the architecture</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let data = null;
+        let svg = null;
+        let simulation = null;
+        let nodes = null;
+        let links = null;
+        let filteredNodes = null;
+        let filteredLinks = null;
+
+        async function analyzeRepository() {
+            const path = document.getElementById('pathInput').value.trim();
+            const btn = document.getElementById('analyzeBtn');
+            const errorDiv = document.getElementById('errorMessage');
+            
+            if (!path) {
+                showError('Please enter a repository path');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = 'Analyzing...';
+            errorDiv.style.display = 'none';
+            
+            try {
+                const response = await fetch('/facts', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ root_path: path })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.error);
+                }
+                
+                updateStats(data.stats);
+                renderDiagram(data.nodes, data.edges);
+                
+            } catch (error) {
+                showError(`Analysis failed: ${error.message}`);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Analyze';
+            }
+        }
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('errorMessage');
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+        
+        function updateStats(stats) {
+            const statsDiv = document.getElementById('stats');
+            statsDiv.innerHTML = `
+                <span><strong>${stats.total_files}</strong> files</span>
+                <span><strong>${stats.python_files}</strong> Python files</span>
+                <span><strong>${stats.modules}</strong> modules</span>
+                <span><strong>${stats.packages}</strong> packages</span>
+            `;
+        }
+        
+        function renderDiagram(nodes, edges) {
+            // Clear previous diagram
+            d3.select('#diagram').selectAll('*').remove();
+            
+            const width = document.getElementById('diagram').clientWidth;
+            const height = 600;
+            
+            svg = d3.select('#diagram')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            // Create tooltip
+            const tooltip = d3.select('body').append('div')
+                .attr('class', 'tooltip')
+                .style('opacity', 0);
+            
+            // Create force simulation
+            simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(30));
+            
+            // Create links
+            links = svg.append('g')
+                .selectAll('line')
+                .data(edges)
+                .enter().append('line')
+                .attr('class', d => `link ${d.type}`)
+                .attr('stroke-width', 2);
+            
+            // Create nodes
+            const nodeGroups = svg.append('g')
+                .selectAll('g')
+                .data(nodes)
+                .enter().append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+            
+            // Add circles to nodes
+            nodeGroups.append('circle')
+                .attr('r', d => d.type === 'package' ? 15 : 10)
+                .attr('fill', d => d.type === 'package' ? '#10b981' : '#3b82f6')
+                .on('mouseover', function(event, d) {
+                    tooltip.transition().duration(200).style('opacity', .9);
+                    tooltip.html(`
+                        <strong>${d.name}</strong><br>
+                        Type: ${d.type}<br>
+                        ${d.type === 'module' ? `Classes: ${d.classes}, Functions: ${d.functions}` : `Modules: ${d.modules}`}
+                    `)
+                    .style('left', (event.pageX + 10) + 'px')
+                    .style('top', (event.pageY - 10) + 'px');
+                })
+                .on('mouseout', function() {
+                    tooltip.transition().duration(500).style('opacity', 0);
+                });
+            
+            // Add labels to nodes
+            nodeGroups.append('text')
+                .attr('dx', 15)
+                .attr('dy', 4)
+                .text(d => d.name)
+                .style('font-size', '12px')
+                .style('fill', '#374151');
+            
+            // Update positions on simulation tick
+            simulation.on('tick', () => {
+                links
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                nodeGroups
+                    .attr('transform', d => `translate(${d.x},${d.y})`);
+            });
+            
+            // Store references for search
+            filteredNodes = nodes;
+            filteredLinks = edges;
+        }
+        
+        function searchNodes() {
+            const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+            
+            if (!data || !searchTerm) {
+                // Reset to show all nodes
+                if (filteredNodes && filteredLinks) {
+                    renderDiagram(filteredNodes, filteredLinks);
+                }
+                return;
+            }
+            
+            const matchingNodes = data.nodes.filter(node => 
+                node.name.toLowerCase().includes(searchTerm) ||
+                node.full_name.toLowerCase().includes(searchTerm)
+            );
+            
+            const matchingNodeIds = new Set(matchingNodes.map(n => n.id));
+            const matchingLinks = data.edges.filter(link => 
+                matchingNodeIds.has(link.source.id || link.source) && 
+                matchingNodeIds.has(link.target.id || link.target)
+            );
+            
+            renderDiagram(matchingNodes, matchingLinks);
+        }
+        
+        function dragstarted(event, d) {
+            if (!event.active) simulation.alphaTarget(0.3).restart();
+            d.fx = d.x;
+            d.fy = d.y;
+        }
+        
+        function dragged(event, d) {
+            d.fx = event.x;
+            d.fy = event.y;
+        }
+        
+        function dragended(event, d) {
+            if (!event.active) simulation.alphaTarget(0);
+            d.fx = null;
+            d.fy = null;
+        }
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (data) {
+                const width = document.getElementById('diagram').clientWidth;
+                svg.attr('width', width);
+                simulation.force('center', d3.forceCenter(width / 2, 300));
+                simulation.alpha(0.3).restart();
+            }
+        });
+    </script>
+</body>
+</html>

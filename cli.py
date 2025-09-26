@@ -46,6 +46,10 @@ def cmd_serve(args: argparse.Namespace) -> None:
 	uvicorn.run("api:app", host=args.host, port=args.port, reload=args.reload)
 
 
+def cmd_web(args: argparse.Namespace) -> None:
+	uvicorn.run("web.app:app", host=args.host, port=args.port, reload=args.reload)
+
+
 def main() -> None:
 	parser = argparse.ArgumentParser(prog="archviz")
 	sub = parser.add_subparsers(dest="cmd", required=True)
@@ -59,6 +63,12 @@ def main() -> None:
 	ps.add_argument("--port", type=int, default=8000)
 	ps.add_argument("--reload", action="store_true")
 	ps.set_defaults(func=cmd_serve)
+
+	pw = sub.add_parser("web", help="Run web interface with interactive diagram")
+	pw.add_argument("--host", default="127.0.0.1")
+	pw.add_argument("--port", type=int, default=8001)
+	pw.add_argument("--reload", action="store_true")
+	pw.set_defaults(func=cmd_web)
 
 	args = parser.parse_args()
 	args.func(args)
