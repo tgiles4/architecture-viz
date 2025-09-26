@@ -77,17 +77,29 @@ Notes:
 
 ## Feature 4: Control flow between methods, starting from a specific method
 
+Status: Done
+
 - Objectives:
   - Visualize static call graph starting from a given function/method.
   - Overlay call paths on the main diagram with step-wise expansion.
 - Execution Steps:
   1. Extend AST analysis to build intra-module call relations (conservative static approximations).
   2. Add `/callgraph` API: `GET /callgraph?symbol=...` returning reachable call graph with depths/edges.
-  3. Frontend: add mode toggle “Control Flow”; highlight edges and nodes along selected paths.
+  3. Frontend: add mode toggle "Control Flow"; highlight edges and nodes along selected paths.
   4. Support step expansion, max depth, and filters (external libs on/off).
   5. Add diff view between two entry symbols to compare flows.
 - Deliverables:
   - Call graph overlay with interactive exploration controls.
+
+Notes:
+- Implemented `analyzer/callgraph.py` with CallNode and CallGraph classes for call relation analysis.
+- Added `/callgraph` and `/callgraph/paths` API endpoints with caching for fast retrieval.
+- Created mode toggle between Architecture View and Call Graph View with interactive controls.
+- Added dropdown menus for file and function selection instead of manual typing.
+- Implemented zoom/pan capabilities with mouse wheel, drag, and control buttons.
+- Added fit-to-view functionality to automatically scale and show all nodes.
+- Implemented dark mode theme with dark gray backgrounds for better visual experience.
+- Features: call graph visualization, depth-based coloring, arrow markers, step expansion, external call filtering.
 
 ## Feature 5: Code clone detection and highlighting
 
