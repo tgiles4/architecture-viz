@@ -1,5 +1,7 @@
 ## Feature 1: Extract textual summary of architectural & design facts about code
 
+Status: Done
+
 - Objectives:
   - Parse repository at provided root path.
   - Build an internal model of modules, packages, classes, functions, imports, and dependencies.
@@ -16,6 +18,11 @@
   - `analyzer` package with parsers and summarizer.
   - JSON schema for facts.
   - REST endpoint returning summaries.
+
+Notes:
+- Implemented `analyzer/` with `fs_scan.py`, `ast_parse.py`, `model.py`, `summarize.py` and `api.py` exposing `POST /analyze`.
+- Added CLI `cli.py` with `analyze` and `serve` commands; basic pytest covering AST parsing passed.
+- Smoke-tested against the cloned SimEngineer repository at `test-repo` using the CLI.
 
 ## Feature 2: Build diagram visualizing packages, classes, & files
 
