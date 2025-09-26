@@ -21,6 +21,18 @@ from analyzer.summarize import summarize_repo
 app = FastAPI(title="Architecture Viz Analyzer")
 
 
+@app.get("/")
+def root():
+    return {
+        "message": "Architecture Viz Analyzer API",
+        "endpoints": {
+            "analyze": "POST /analyze - Analyze a repository",
+            "docs": "GET /docs - API documentation"
+        },
+        "usage": "POST to /analyze with {\"root_path\": \"/path/to/repo\"}"
+    }
+
+
 class AnalyzeRequest(BaseModel):
 	root_path: str
 
