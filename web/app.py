@@ -127,6 +127,7 @@ async def get_facts(request: dict) -> dict:
     return {
         "nodes": nodes,
         "edges": edges,
+        "files": files,  # Include files array for source lookup
         "stats": {
             "total_files": len(files),
             "python_files": len([f for f in files if f.language == "python"]),
