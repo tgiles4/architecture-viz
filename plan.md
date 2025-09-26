@@ -26,6 +26,8 @@ Notes:
 
 ## Feature 2: Build diagram visualizing packages, classes, & files
 
+Status: Done
+
 - Objectives:
   - Interactive diagram showing relationships between packages, modules, classes.
   - Support zoom/pan, highlight on hover, click to focus.
@@ -40,6 +42,14 @@ Notes:
 - Deliverables:
   - SPA served by Python backend with D3-based diagram.
   - API delivering graph data from Feature 1.
+
+Notes:
+- Implemented `web/` directory with FastAPI app, Jinja2 templates, and D3.js visualization.
+- Created `/facts` API endpoint returning graph JSON with nodes (packages/modules) and edges (imports/containment).
+- Built interactive D3.js force-directed diagram with drag, hover tooltips, and search functionality.
+- Added simple UI form for path input and real-time analysis results.
+- Added `web` command to CLI: `python cli.py web --host 0.0.0.0 --port 8002`.
+- Features: node types (packages=green, modules=blue), edge types (imports=dashed, containment=solid), search filtering, statistics display.
 
 ## Feature 3: Drill-down to view code overlayed on diagram
 
