@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from analyzer.fs_scan import scan_repository
 from analyzer.ast_parse import parse_python_module
 from analyzer.model import DependencyEdge, ModuleFacts, PackageFacts, RepoFacts
+from analyzer.callgraph import build_module_callgraph, CallGraph
 
 app = FastAPI(title="Architecture Viz Web Interface")
 
@@ -23,6 +24,7 @@ templates = Jinja2Templates(directory="web/templates")
 # Global cache for file contents and analysis results
 file_cache: Dict[str, str] = {}
 analysis_cache: Dict[str, dict] = {}
+callgraph_cache: Dict[str, CallGraph] = {}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -124,6 +126,10 @@ async def get_facts(request: dict) -> dict:
         "packages": packages
     }
     
+    # Build call graph and cache it
+    callgraph = build_module_callgraph(modules, file_cache)
+    callgraph_cache[cache_key] = callgraph
+    
     return {
         "nodes": nodes,
         "edges": edges,
@@ -208,6 +214,96 @@ async def get_source(path: str, symbol: Optional[str] = None) -> dict:
         "end_line": end_line,
         "total_lines": len(lines),
         "language": "python" if path.endswith('.py') else "text"
+    }
+
+
+@app.get("/callgraph")
+async def get_callgraph(symbol: str, root_path: str, max_depth: int = 5, include_external: bool = False) -> dict:
+    """Get call graph starting from a specific symbol."""
+    # Find the matching cache key
+    cache_key = None
+    for key in callgraph_cache.keys():
+        if key.startswith(root_path):
+            cache_key = key
+            break
+    
+    if not cache_key or cache_key not in callgraph_cache:
+        raise HTTPException(status_code=404, detail="Analysis not found. Please run analysis first.")
+    
+    callgraph = callgraph_cache[cache_key]
+    
+    # Get reachable nodes from the symbol
+    reachable = callgraph.get_reachable_from(symbol, max_depth)
+    
+    # Build nodes and edges for visualization
+    nodes = []
+    edges = []
+    
+    # Add the starting node
+    if symbol in callgraph.nodes:
+        start_node = callgraph.nodes[symbol]
+        nodes.append({
+            "id": symbol,
+            "name": symbol,
+            "type": start_node.node_type,
+            "module": start_node.module,
+            "line": start_node.line,
+            "depth": 0
+        })
+    
+    # Add reachable nodes
+    for node_name, depth in reachable.items():
+        if node_name != symbol and node_name in callgraph.nodes:
+            node = callgraph.nodes[node_name]
+            nodes.append({
+                "id": node_name,
+                "name": node_name,
+                "type": node.node_type,
+                "module": node.module,
+                "line": node.line,
+                "depth": depth
+            })
+    
+    # Add edges between reachable nodes
+    for caller, callee in callgraph.edges:
+        if caller in reachable and callee in reachable:
+            edges.append({
+                "source": caller,
+                "target": callee,
+                "type": "call"
+            })
+    
+    return {
+        "symbol": symbol,
+        "nodes": nodes,
+        "edges": edges,
+        "max_depth": max_depth,
+        "total_reachable": len(reachable)
+    }
+
+
+@app.get("/callgraph/paths")
+async def get_callgraph_paths(start: str, end: str, root_path: str, max_depth: int = 5) -> dict:
+    """Get paths between two symbols."""
+    # Find the matching cache key
+    cache_key = None
+    for key in callgraph_cache.keys():
+        if key.startswith(root_path):
+            cache_key = key
+            break
+    
+    if not cache_key or cache_key not in callgraph_cache:
+        raise HTTPException(status_code=404, detail="Analysis not found. Please run analysis first.")
+    
+    callgraph = callgraph_cache[cache_key]
+    paths = callgraph.get_paths_between(start, end, max_depth)
+    
+    return {
+        "start": start,
+        "end": end,
+        "paths": paths,
+        "path_count": len(paths),
+        "max_depth": max_depth
     }
 
 

@@ -305,6 +305,10 @@
                 <div class="search-box">
                     <input type="text" id="searchInput" placeholder="Search nodes..." onkeyup="searchNodes()">
                 </div>
+                <div class="mode-controls">
+                    <button id="modeBtn" onclick="toggleMode()">Architecture View</button>
+                    <button id="callgraphBtn" onclick="showCallgraphDialog()" style="display: none;">Show Call Graph</button>
+                </div>
                 <div class="stats" id="stats">
                     <span>Ready to analyze</span>
                 </div>
@@ -352,6 +356,33 @@
         </div>
     </div>
 
+    <!-- Call Graph Dialog -->
+    <div id="callgraphDialog" class="overlay" style="display: none;">
+        <div class="overlay-content" style="max-width: 600px;">
+            <div class="overlay-header">
+                <div class="overlay-title">Control Flow Analysis</div>
+                <button class="close-btn" onclick="closeCallgraphDialog()">&times;</button>
+            </div>
+            <div class="overlay-body">
+                <div class="form-group">
+                    <label for="symbolInput">Enter function/method name:</label>
+                    <input type="text" id="symbolInput" placeholder="e.g., analyze, parse_python_module" style="width: 100%; margin-bottom: 10px;">
+                </div>
+                <div class="form-group">
+                    <label for="depthInput">Max depth:</label>
+                    <input type="number" id="depthInput" value="3" min="1" max="10" style="width: 80px; margin-right: 20px;">
+                    <label>
+                        <input type="checkbox" id="includeExternal"> Include external calls
+                    </label>
+                </div>
+                <div class="form-group">
+                    <button onclick="generateCallgraph()" style="width: 100%;">Generate Call Graph</button>
+                </div>
+                <div id="callgraphResults" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let data = null;
         let svg = null;
@@ -362,6 +393,7 @@
         let filteredLinks = null;
         let currentAnalysis = null;
         let analysisFiles = null;
+        let currentMode = 'architecture'; // 'architecture' or 'callgraph'
 
         async function analyzeRepository() {
             const path = document.getElementById('pathInput').value.trim();
@@ -679,6 +711,170 @@
                 closeOverlay();
             }
         });
+        
+        // Call graph functions
+        function toggleMode() {
+            const modeBtn = document.getElementById('modeBtn');
+            const callgraphBtn = document.getElementById('callgraphBtn');
+            
+            if (currentMode === 'architecture') {
+                currentMode = 'callgraph';
+                modeBtn.textContent = 'Call Graph View';
+                callgraphBtn.style.display = 'inline-block';
+            } else {
+                currentMode = 'architecture';
+                modeBtn.textContent = 'Architecture View';
+                callgraphBtn.style.display = 'none';
+                // Restore original diagram
+                if (data) {
+                    renderDiagram(data.nodes, data.edges);
+                }
+            }
+        }
+        
+        function showCallgraphDialog() {
+            document.getElementById('callgraphDialog').style.display = 'block';
+        }
+        
+        function closeCallgraphDialog() {
+            document.getElementById('callgraphDialog').style.display = 'none';
+        }
+        
+        async function generateCallgraph() {
+            const symbol = document.getElementById('symbolInput').value.trim();
+            const depth = parseInt(document.getElementById('depthInput').value);
+            const includeExternal = document.getElementById('includeExternal').checked;
+            const resultsDiv = document.getElementById('callgraphResults');
+            
+            if (!symbol) {
+                resultsDiv.innerHTML = '<div class="error">Please enter a function name</div>';
+                return;
+            }
+            
+            if (!currentAnalysis) {
+                resultsDiv.innerHTML = '<div class="error">Please run analysis first</div>';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/callgraph?symbol=${encodeURIComponent(symbol)}&root_path=${encodeURIComponent(currentAnalysis)}&max_depth=${depth}&include_external=${includeExternal}`);
+                const callgraphData = await response.json();
+                
+                if (callgraphData.nodes && callgraphData.nodes.length > 0) {
+                    // Render call graph in the main diagram
+                    renderCallgraph(callgraphData.nodes, callgraphData.edges);
+                    
+                    // Show results summary
+                    resultsDiv.innerHTML = `
+                        <div class="symbol-info">
+                            <strong>Call Graph for: ${symbol}</strong><br>
+                            Found ${callgraphData.total_reachable} reachable functions<br>
+                            Max depth: ${depth}
+                        </div>
+                    `;
+                    
+                    closeCallgraphDialog();
+                } else {
+                    resultsDiv.innerHTML = '<div class="error">No call graph found for this symbol</div>';
+                }
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error generating call graph: ${error.message}</div>`;
+            }
+        }
+        
+        function renderCallgraph(nodes, edges) {
+            // Clear previous diagram
+            d3.select('#diagram').selectAll('*').remove();
+            
+            const width = document.getElementById('diagram').clientWidth;
+            const height = 600;
+            
+            svg = d3.select('#diagram')
+                .append('svg')
+                .attr('width', width)
+                .attr('height', height);
+            
+            // Create force simulation for call graph
+            simulation = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(edges).id(d => d.id).distance(100))
+                .force('charge', d3.forceManyBody().strength(-300))
+                .force('center', d3.forceCenter(width / 2, height / 2))
+                .force('collision', d3.forceCollide().radius(30));
+            
+            // Create links
+            links = svg.append('g')
+                .selectAll('line')
+                .data(edges)
+                .enter().append('line')
+                .attr('class', 'link call')
+                .attr('stroke', '#ef4444')
+                .attr('stroke-width', 2)
+                .attr('marker-end', 'url(#arrowhead)');
+            
+            // Add arrow marker
+            svg.append('defs').append('marker')
+                .attr('id', 'arrowhead')
+                .attr('viewBox', '0 -5 10 10')
+                .attr('refX', 8)
+                .attr('refY', 0)
+                .attr('markerWidth', 6)
+                .attr('markerHeight', 6)
+                .attr('orient', 'auto')
+                .append('path')
+                .attr('d', 'M0,-5L10,0L0,5')
+                .attr('fill', '#ef4444');
+            
+            // Create nodes
+            const nodeGroups = svg.append('g')
+                .selectAll('g')
+                .data(nodes)
+                .enter().append('g')
+                .attr('class', 'node')
+                .call(d3.drag()
+                    .on('start', dragstarted)
+                    .on('drag', dragged)
+                    .on('end', dragended));
+            
+            // Add circles to nodes with depth-based coloring
+            nodeGroups.append('circle')
+                .attr('r', d => d.depth === 0 ? 12 : 8)
+                .attr('fill', d => {
+                    if (d.depth === 0) return '#dc2626'; // Red for entry point
+                    if (d.type === 'method') return '#7c3aed'; // Purple for methods
+                    return '#3b82f6'; // Blue for functions
+                })
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 2);
+            
+            // Add labels
+            nodeGroups.append('text')
+                .attr('dx', 15)
+                .attr('dy', 4)
+                .text(d => d.name)
+                .style('font-size', '12px')
+                .style('fill', '#374151');
+            
+            // Add depth indicators
+            nodeGroups.append('text')
+                .attr('dx', 15)
+                .attr('dy', 18)
+                .text(d => `d${d.depth}`)
+                .style('font-size', '10px')
+                .style('fill', '#9ca3af');
+            
+            // Update positions on simulation tick
+            simulation.on('tick', () => {
+                links
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                
+                nodeGroups
+                    .attr('transform', d => `translate(${d.x},${d.y})`);
+            });
+        }
     </script>
 </body>
 </html>
