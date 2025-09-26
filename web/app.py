@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -19,6 +19,10 @@ app.mount("/static", StaticFiles(directory="web/static"), name="static")
 
 # Templates
 templates = Jinja2Templates(directory="web/templates")
+
+# Global cache for file contents and analysis results
+file_cache: Dict[str, str] = {}
+analysis_cache: Dict[str, dict] = {}
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -103,6 +107,23 @@ async def get_facts(request: dict) -> dict:
                     "type": "contains"
                 })
     
+    # Cache file contents and analysis results
+    cache_key = f"{root_path}_{len(files)}"
+    for f in files:
+        if f.language == "python" and f.module:
+            try:
+                with open(f.path, "r", encoding="utf-8") as fh:
+                    content = fh.read()
+                    file_cache[f.path] = content
+            except Exception:
+                continue
+    
+    analysis_cache[cache_key] = {
+        "files": files,
+        "modules": modules,
+        "packages": packages
+    }
+    
     return {
         "nodes": nodes,
         "edges": edges,
@@ -112,6 +133,80 @@ async def get_facts(request: dict) -> dict:
             "modules": len(modules),
             "packages": len(packages)
         }
+    }
+
+
+@app.get("/source")
+async def get_source(path: str, symbol: Optional[str] = None) -> dict:
+    """Get source code snippet for a file and optional symbol."""
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    # Get file content from cache or read from disk
+    if path in file_cache:
+        content = file_cache[path]
+    else:
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                content = fh.read()
+                file_cache[path] = content
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Cannot read file: {e}")
+    
+    lines = content.split('\n')
+    
+    # If symbol is specified, try to find it in the content
+    if symbol:
+        symbol_lines = []
+        in_symbol = False
+        indent_level = None
+        
+        for i, line in enumerate(lines):
+            # Look for function or class definition
+            if symbol in line and ('def ' in line or 'class ' in line):
+                in_symbol = True
+                indent_level = len(line) - len(line.lstrip())
+                symbol_lines.append((i + 1, line))
+            elif in_symbol:
+                if line.strip() == '':
+                    symbol_lines.append((i + 1, line))
+                elif len(line) - len(line.lstrip()) > indent_level:
+                    symbol_lines.append((i + 1, line))
+                else:
+                    break
+        
+        if symbol_lines:
+            start_line = symbol_lines[0][0]
+            end_line = symbol_lines[-1][0]
+            symbol_content = '\n'.join([line for _, line in symbol_lines])
+        else:
+            # Fallback: return lines containing the symbol
+            matching_lines = []
+            for i, line in enumerate(lines):
+                if symbol in line:
+                    matching_lines.append((i + 1, line))
+            if matching_lines:
+                start_line = matching_lines[0][0]
+                end_line = matching_lines[-1][0]
+                symbol_content = '\n'.join([line for _, line in matching_lines])
+            else:
+                start_line = 1
+                end_line = min(10, len(lines))
+                symbol_content = '\n'.join(lines[:end_line])
+    else:
+        # Return first 50 lines if no symbol specified
+        start_line = 1
+        end_line = min(50, len(lines))
+        symbol_content = '\n'.join(lines[:end_line])
+    
+    return {
+        "path": path,
+        "symbol": symbol,
+        "content": symbol_content,
+        "start_line": start_line,
+        "end_line": end_line,
+        "total_lines": len(lines),
+        "language": "python" if path.endswith('.py') else "text"
     }
 
 

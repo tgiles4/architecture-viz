@@ -10,7 +10,7 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             margin: 0;
             padding: 20px;
-            background: #f8fafc;
+            background: #064e3b;
         }
         
         .container {
@@ -64,6 +64,12 @@
             border-radius: 8px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
             overflow: hidden;
+        }
+        
+        #diagram {
+            width: 100%;
+            height: 600px;
+            background: #f0fdf4;
         }
         
         .controls {
@@ -154,6 +160,129 @@
             border-radius: 6px;
             margin: 10px 0;
         }
+        
+        /* Overlay styles */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            z-index: 1000;
+            display: none;
+        }
+        
+        .overlay-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+            max-width: 80%;
+            max-height: 80%;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .overlay-header {
+            padding: 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .overlay-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #111827;
+        }
+        
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 24px;
+            cursor: pointer;
+            color: #6b7280;
+        }
+        
+        .overlay-body {
+            flex: 1;
+            overflow: auto;
+            padding: 20px;
+        }
+        
+        .tabs {
+            display: flex;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 20px;
+        }
+        
+        .tab {
+            padding: 10px 20px;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            color: #6b7280;
+        }
+        
+        .tab.active {
+            color: #3b82f6;
+            border-bottom-color: #3b82f6;
+        }
+        
+        .tab-content {
+            display: none;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .code-block {
+            background: #f8fafc;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 16px;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 14px;
+            line-height: 1.5;
+            overflow-x: auto;
+            white-space: pre;
+        }
+        
+        .code-line {
+            display: block;
+            padding: 2px 0;
+        }
+        
+        .line-number {
+            color: #9ca3af;
+            margin-right: 16px;
+            user-select: none;
+        }
+        
+        .symbol-info {
+            background: #f0f9ff;
+            border: 1px solid #bae6fd;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        
+        .symbol-name {
+            font-weight: 600;
+            color: #0369a1;
+            margin-bottom: 8px;
+        }
+        
+        .symbol-details {
+            color: #0c4a6e;
+            font-size: 14px;
+        }
     </style>
 </head>
 <body>
@@ -187,6 +316,42 @@
         </div>
     </div>
 
+    <!-- Overlay for code display -->
+    <div id="overlay" class="overlay">
+        <div class="overlay-content">
+            <div class="overlay-header">
+                <div class="overlay-title" id="overlayTitle">Code View</div>
+                <button class="close-btn" onclick="closeOverlay()">&times;</button>
+            </div>
+            <div class="overlay-body">
+                <div class="tabs">
+                    <div class="tab active" onclick="switchTab('summary')">Summary</div>
+                    <div class="tab" onclick="switchTab('code')">Code</div>
+                    <div class="tab" onclick="switchTab('references')">References</div>
+                </div>
+                
+                <div id="summaryTab" class="tab-content active">
+                    <div class="symbol-info" id="symbolInfo">
+                        <div class="symbol-name" id="symbolName">Module/Class</div>
+                        <div class="symbol-details" id="symbolDetails">Details will be loaded here</div>
+                    </div>
+                </div>
+                
+                <div id="codeTab" class="tab-content">
+                    <div class="code-block" id="codeContent">
+                        <div class="loading">Loading code...</div>
+                    </div>
+                </div>
+                
+                <div id="referencesTab" class="tab-content">
+                    <div id="referencesContent">
+                        <div class="loading">Loading references...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
         let data = null;
         let svg = null;
@@ -195,6 +360,7 @@
         let links = null;
         let filteredNodes = null;
         let filteredLinks = null;
+        let currentAnalysis = null;
 
         async function analyzeRepository() {
             const path = document.getElementById('pathInput').value.trim();
@@ -229,6 +395,7 @@
                     throw new Error(data.error);
                 }
                 
+                currentAnalysis = path;
                 updateStats(data.stats);
                 renderDiagram(data.nodes, data.edges);
                 
@@ -315,6 +482,9 @@
                 })
                 .on('mouseout', function() {
                     tooltip.transition().duration(500).style('opacity', 0);
+                })
+                .on('click', function(event, d) {
+                    showNodeDetails(d);
                 });
             
             // Add labels to nodes
@@ -391,6 +561,128 @@
                 svg.attr('width', width);
                 simulation.force('center', d3.forceCenter(width / 2, 300));
                 simulation.alpha(0.3).restart();
+            }
+        });
+        
+        // Overlay functions
+        async function showNodeDetails(node) {
+            const overlay = document.getElementById('overlay');
+            const title = document.getElementById('overlayTitle');
+            const symbolName = document.getElementById('symbolName');
+            const symbolDetails = document.getElementById('symbolDetails');
+            
+            title.textContent = `${node.name} (${node.type})`;
+            symbolName.textContent = node.name;
+            
+            if (node.type === 'module') {
+                symbolDetails.innerHTML = `
+                    <strong>Module:</strong> ${node.full_name}<br>
+                    <strong>Classes:</strong> ${node.classes}<br>
+                    <strong>Functions:</strong> ${node.functions}<br>
+                    <strong>Imports:</strong> ${node.imports}
+                `;
+            } else {
+                symbolDetails.innerHTML = `
+                    <strong>Package:</strong> ${node.full_name}<br>
+                    <strong>Modules:</strong> ${node.modules}
+                `;
+            }
+            
+            // Load code content
+            await loadCodeContent(node);
+            
+            overlay.style.display = 'block';
+        }
+        
+        async function loadCodeContent(node) {
+            const codeContent = document.getElementById('codeContent');
+            const referencesContent = document.getElementById('referencesContent');
+            
+            try {
+                // Find the file path for this module
+                let filePath = null;
+                if (node.type === 'module' && currentAnalysis) {
+                    // Try to find the corresponding Python file
+                    const response = await fetch('/facts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ root_path: currentAnalysis })
+                    });
+                    const analysisData = await response.json();
+                    
+                    // Find the file path for this module
+                    for (const file of analysisData.files || []) {
+                        if (file.module === node.full_name) {
+                            filePath = file.path;
+                            break;
+                        }
+                    }
+                }
+                
+                if (filePath) {
+                    // Load source code
+                    const sourceResponse = await fetch(`/source?path=${encodeURIComponent(filePath)}`);
+                    const sourceData = await sourceResponse.json();
+                    
+                    // Display code with line numbers
+                    const lines = sourceData.content.split('\n');
+                    const codeHtml = lines.map((line, i) => 
+                        `<div class="code-line">
+                            <span class="line-number">${sourceData.start_line + i}</span>${escapeHtml(line)}
+                        </div>`
+                    ).join('');
+                    
+                    codeContent.innerHTML = codeHtml;
+                } else {
+                    codeContent.innerHTML = '<div class="loading">No source code available for this node</div>';
+                }
+                
+                // Load references
+                if (node.type === 'module') {
+                    const references = data.edges.filter(edge => 
+                        edge.source === node.id || edge.target === node.id
+                    );
+                    
+                    referencesContent.innerHTML = `
+                        <h4>Dependencies</h4>
+                        <ul>
+                            ${references.map(ref => `<li>${ref.source} → ${ref.target} (${ref.type})</li>`).join('')}
+                        </ul>
+                    `;
+                } else {
+                    referencesContent.innerHTML = '<div class="loading">No references available for packages</div>';
+                }
+                
+            } catch (error) {
+                codeContent.innerHTML = `<div class="error">Error loading code: ${error.message}</div>`;
+                referencesContent.innerHTML = `<div class="error">Error loading references: ${error.message}</div>`;
+            }
+        }
+        
+        function closeOverlay() {
+            document.getElementById('overlay').style.display = 'none';
+        }
+        
+        function switchTab(tabName) {
+            // Remove active class from all tabs and contents
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            
+            // Add active class to selected tab and content
+            event.target.classList.add('active');
+            document.getElementById(tabName + 'Tab').classList.add('active');
+        }
+        
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        // Close overlay when clicking outside
+        document.getElementById('overlay').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeOverlay();
             }
         });
     </script>
