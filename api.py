@@ -55,20 +55,20 @@ def analyze(req: AnalyzeRequest) -> AnalyzeResult:
 				edges.append(DependencyEdge(from_module=m.module, to_module=imp))
 
 	# Group packages
-    packages: Dict[str, List[ModuleFacts]] = {}
+	packages: Dict[str, List[ModuleFacts]] = {}
 	for m in modules:
 		pkg = m.module.rsplit(".", 1)[0] if "." in m.module else ""
 		packages.setdefault(pkg, []).append(m)
 
-    packages_facts: Dict[str, PackageFacts] = {
-        pkg: PackageFacts(package=pkg, modules=mods) for pkg, mods in packages.items()
-    }
+	packages_facts: Dict[str, PackageFacts] = {
+		pkg: PackageFacts(package=pkg, modules=mods) for pkg, mods in packages.items()
+	}
 
-    repo_facts = RepoFacts(
+	repo_facts = RepoFacts(
 		root=root,
 		files=files,
 		modules=modules,
-        packages=packages_facts,
+		packages=packages_facts,
 		dependencies=edges,
 	)
 
